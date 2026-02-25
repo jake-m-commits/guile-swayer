@@ -272,20 +272,25 @@ Parameters:
 Response:
     An  array of objects corresponding to each command that was parsed. Each
     object has the property success."
-  (format #t "dispatching: ~a\n" (string-join commands "\n"))
+  (let ((command-str (string-join commands "; ")))
+    (format #t "dispatching: ~a\n" command-str)
 
-  (catch-all
-   (lambda ()
-      (begin
-        ;; write the commands message
-        (sway-write-msg SWAY-COMMAND-SOCKET SWAY-MSG-ID-RUN-COMMMAND (string-join commands " "))
-        ;; read response from socket
-        (map
-         (lambda (res)
-           (scm->sway-tick res))
-         (vector->list
-          (json-string->scm
-           (list-ref (sway-read-msg SWAY-COMMAND-SOCKET) 1))))))))
+    (catch-all
+     (lambda ()
+       (begin
+         ;; write the commands message
+         (sway-write-msg SWAY-COMMAND-SOCKET SWAY-MSG-ID-RUN-COMMMAND command-str)
+         ;; read response from socket
+         (let* ((response (sway-read-msg SWAY-COMMAND-SOCKET))
+                (payload (list-ref response 1))
+                (scm (json-string->scm payload)))
+           (map
+            (lambda (res)
+              (let ((tick (scm->sway-tick res)))
+                (unless (sway-tick-success tick)
+                  (format #t "command failed: ~a\n" res))
+                tick))
+            (vector->list scm))))))))
 
 ;;        bar [<bar-id>] <bar-subcommands...>
 ;;            For details on bar subcommands, see sway-bar(5).
