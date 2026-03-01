@@ -1510,7 +1510,7 @@ windows and then jump to them at a later time.
     - output: name of the output (str)
     - position: Places the specified output at the specific position in the global coordinate space (list x, y)
     - resolution: width and height (in pixels) configured for the display.
-	- refresh-rate: the refresh rate of the display
+	- refresh-rate: the refresh rate of the display (requires resolution to take effect)
     - output: name of the output (str)
     - scale: scales the specified output by the a scale factor (float)
     - scale-filter: indicates how to scale application buffers
