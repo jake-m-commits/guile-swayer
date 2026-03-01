@@ -595,7 +595,7 @@ Response:
 
 (define* (sway-move-container-to-mark mark #:key (exec #t))
   "Moves the focused container to the specified mark."
-  (let* ((command (format #f "move container to mark ~a" mark)))
+  (let* ((command (format #f "move container to mark \"~a\"" mark)))
     (if exec (sway-dispatch-command command)
         command)))
 
@@ -641,7 +641,7 @@ Response:
   parameters:
     - workspace: output name, output id, `SWAY-OUTPUT-CURRENT`, `SWAY-OUTPUT-UP`,
                  `SWAY-OUTPUT-RIGHT`, `SWAY-OUTPUT-DOWN`, `SWAY-OUTPUT-LEFT`"
-  (let* ((command (format #f "move workspace to output ~a" output)))
+  (let* ((command (format #f "move workspace to output \"~a\"" output)))
     (if exec (sway-dispatch-command command)
         command)))
 
@@ -1022,7 +1022,7 @@ If the units are omitted, floating containers are resized in px and tiled contai
   "remove identifier from the list of current marks on a window.
   Parameters:
    - mark: string mark."
-  (let* ((command (format #f "unmark ~a" identifier)))
+  (let* ((command (format #f "unmark \"~a\"" identifier)))
     (if exec (sway-dispatch-command command)
         command)))
 
@@ -1411,9 +1411,9 @@ windows and then jump to them at a later time.
     - add: add identifier to the list of current marks for that window.
     - toggle: remove identifier if it is already marked.
     - identifier: label that can be used to identify that window."
-  (let* ((command (format #f "mark ~a ~a ~a"
-                          (if add "--add" "")
-                          (if toggle "--toggle" "")
+  (let* ((command (format #f "mark ~a~a\"~a\""
+                          (if add "--add " "")
+                          (if toggle "--toggle " "")
                           identifier)))
     (if exec (sway-dispatch-command command)
         command)))
