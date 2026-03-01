@@ -12,7 +12,9 @@
             sway-tree-nodes-optimize
             sway-tree-move-node
             sway-tree-nodes-flat
-            sway-tree-nodes-apps))
+            sway-tree-nodes-apps
+			sway-move-container-under-container
+            sway-tree-print))
 
 (define (list-or lst)
   "Return first non false item from a list LST"
@@ -85,15 +87,12 @@ The children will move to the parent of NODE"
 
 (define (sway-tree-nodes-flat node)
   "Return a list of all containers (flat) under NODE"
-  (cond
-   ((null? (sway-tree-nodes node)) node)
-   (else (cons node
-               (map (lambda (n) (sway-tree-nodes-flat node))
-                    (sway-tree-nodes node))))))
+  (cons node
+        (apply append (map sway-tree-nodes-flat (sway-tree-nodes node)))))
 
 (define (sway-tree-nodes-apps node)
   "Return a list of all apps under NODE"
-  (filter (lambda (n) (sway-tree-app-id node))
+  (filter (lambda (n) (sway-tree-app-id n))
           (sway-tree-nodes-flat node)))
 
 (define (sway-tree-move-node node new-sibling-node)
@@ -111,7 +110,14 @@ The children will move to the parent of NODE"
                 (sway-criteria #:con-id (sway-tree-id node))
                 (sway-move-container-to-mark mark #:exec #f)))))
 
-(define (sway-tree-nodes-optimize node)
+(define* (focused-workspace-name #:key (workspaces (sway-get-workspaces)))
+  (cond
+   ((null? workspaces) #f)
+   ((equal? #t (sway-workspace-focused (car workspaces)))
+    (sway-workspace-name (car workspaces)))
+   (else (focused-workspace-name #:workspaces (cdr workspaces)))))
+
+(define* (sway-tree-nodes-optimize node #:optional parent)
   "Remove any vertical/horizontal container that has only one child.
 This function is necessary for strict some auto tiling layouts
 It shouldn't be used for manual tiling."
@@ -120,20 +126,94 @@ It shouldn't be used for manual tiling."
      ;; no children: nothing to do
      ((null? children) #t)
 
-     ;; has exactly one child and vertical or horizontal layout
-     ;; and the child also has vertical or horizontal layout
-     ((and (= 1 (length children))
-           (equal? (sway-tree-type node) "con")
-           (member (sway-tree-layout node) `(,SWAY-LAYOUT-SPLITH ,SWAY-LAYOUT-SPLITV)))
+     ;; parent container is not of type workspace
+     ;; and one of the children has layout none
+     ((and (not (null? parent))
+		   (not (equal? (sway-tree-type node) "workspace"))
+           (not (equal? (sway-tree-type parent) "workspace"))
+           (member "none" (map sway-tree-layout children)))
+	  (format #t "moving container ~a to top of workspace ~a\n" (sway-tree-id node) (focused-workspace-name))
 
-      (sway-dispatch-command
-        (format #f "~a ~a"
-                (sway-criteria #:con-id (sway-tree-id (car children)))
-                (sway-split-container SWAY-SPLIT-NONE #:exec #f)))
+	  ;; find the id of the first container under current workspace
+	  (let* ((focused (sway-tree-node-focused))
+			 (workspace (sway-tree-node-workspace focused))
+			 (con-id (sway-tree-id (car (sway-tree-nodes workspace)))))
+		;; (sway-dispatch-command (format #f "~a; ~a ~a"
+		;; 							   command
+		;; 							   (sway-criteria #:con-id (sway-tree-id node))
+		;; 							   (sway-move-container SWAY-DIRECTION-UP #:exec #f)))
 
-      ;; continue checking the child
-      (sway-tree-nodes-optimize (car children)))
+		;; (sway-move-container-under-workspace (sway-tree-id node) (focused-workspace-name))
+		;; (sway-dispatch-command (format #f "~a ~a"
+		;; 					   (sway-criteria #:con-id (sway-tree-id focused))
+		;; 					   (sway-move-container-to-workspace (focused-workspace-name) #:exec #f)))
+		;; continue checking the child
+		(sway-dispatch-command (format #f "~a ~a; ~a ~a"
+							   (sway-criteria #:con-id (sway-tree-id node))
+							   (sway-move-container-to-workspace "guile-swayer-scratchpad" #:exec #f)
+							   (sway-criteria #:con-id (sway-tree-id node))
+							   (sway-move-container-to-workspace (focused-workspace-name) #:exec #f)))
+
+		(sway-tree-nodes-optimize (car children) node)))
 
      ;; otherwise, continue checking children
-     (else (map (lambda (n) (sway-tree-nodes-optimize n))
-                (sway-tree-nodes node))))))
+     (else (map (lambda (n) (sway-tree-nodes-optimize n node))
+                children)))))
+
+(define* (sway-move-container-under-container source-con-id target-con-id #:key (exec #t))
+  "Moves focused container and place it under target container.
+  parameters:
+    - con-id: id of the target container"
+  (let* ((mark-name "guile_swayer_target_con")
+		 (mark-command (format #f "~a ~a"
+							   (sway-criteria #:con-id target-con-id)
+							   (sway-mark mark-name #:exec #f)))
+		 (move-command (format #f "~a ~a"
+							   (sway-criteria #:con-id source-con-id)
+							   (sway-move-container-to-mark mark-name #:exec #f)))
+		 (unmark-command (format #f "~a ~a"
+								 (sway-criteria #:con-id target-con-id)
+								 (sway-unmark mark-name #:exec #f)))
+         (command (string-join (list mark-command move-command unmark-command) "; ")))
+    (if exec (sway-dispatch-command command)
+        command)))
+
+(define (sway-tree-print node)
+  "Print the structure of the tree and its containers in a clear tree view"
+  (define (print-node n indent is-last)
+    (let* ((prefix (if is-last "└── " "├── "))
+           (children (append (sway-tree-nodes n) (sway-tree-floating-nodes n)))
+           (type (sway-tree-type n))
+           (layout (sway-tree-layout n))
+           (id (sway-tree-id n))
+           (name (sway-tree-name n))
+           (app-id (sway-tree-app-id n))
+           (focused (if (sway-tree-focused n) " [FOCUSED]" "")))
+      (display indent)
+      (display prefix)
+      (format #t "[~a] id:~a layout:~a ~a~a~a\n"
+              type id layout
+              (if (and (string? name) (not (string-null? name))) (format #f "name:\"~a\" " name) "")
+              (if (and (string? app-id) (not (string-null? app-id))) (format #f "app-id:\"~a\" " app-id) "")
+              focused)
+      (let ((new-indent (string-append indent (if is-last "    " "│   "))))
+        (let loop ((nodes children))
+          (unless (null? nodes)
+            (print-node (car nodes) new-indent (null? (cdr nodes)))
+            (loop (cdr nodes)))))))
+
+  (let ((children (append (sway-tree-nodes node) (sway-tree-floating-nodes node)))
+        (type (sway-tree-type node))
+        (layout (sway-tree-layout node))
+        (id (sway-tree-id node))
+        (name (sway-tree-name node))
+        (focused (if (sway-tree-focused node) " [FOCUSED]" "")))
+    (format #t "[~a] id:~a layout:~a ~a~a\n"
+            type id layout
+            (if (and (string? name) (not (string-null? name))) (format #f "name:\"~a\" " name) "")
+            focused)
+    (let loop ((nodes children))
+      (unless (null? nodes)
+        (print-node (car nodes) "" (null? (cdr nodes)))
+        (loop (cdr nodes))))))
+
